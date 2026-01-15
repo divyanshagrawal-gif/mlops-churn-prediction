@@ -24,11 +24,9 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
-      - name: Run training sanity check
-        env:
-          PYTHONPATH: .
+      - name: Skip training (data not available in CI)
         run: |
-          python training/train.py training/config.yaml
+          echo "Skipping training sanity check"
 
       - name: Build Docker image
         run: |

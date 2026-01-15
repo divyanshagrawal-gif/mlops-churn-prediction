@@ -25,6 +25,8 @@ jobs:
           pip install -r requirements.txt
 
       - name: Run training sanity check
+        env:
+          PYTHONPATH: .
         run: |
           python training/train.py training/config.yaml
 

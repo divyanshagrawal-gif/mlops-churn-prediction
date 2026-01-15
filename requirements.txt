@@ -5,3 +5,5 @@ pyyaml
 joblib
 mlflow
 dvc
+fastapi 
+uvicorn

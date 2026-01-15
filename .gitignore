@@ -4,3 +4,5 @@ models/*
 data/raw/*
 mlruns/
 env/
+.DS_Store
+mlflow.db

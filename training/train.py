@@ -9,7 +9,7 @@ from sklearn.model_selection import train_test_split
 from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import accuracy_score
 
-from features.build_features import build_features
+from features.builder import build_features
 
 
 def load_config(path: str) -> dict:

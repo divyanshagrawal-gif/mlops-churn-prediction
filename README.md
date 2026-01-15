@@ -9,6 +9,7 @@ This project implements a complete MLOps workflow that ensures:
 - **Feature Consistency**: The same feature logic is used in training and inference, preventing training-serving skew
 - **Experiment Tracking**: All experiments are logged with MLflow for comparison and model versioning
 - **Data Versioning**: Processed datasets are versioned with DVC, tied to Git commits
+- **Production Monitoring**: Prediction logging and data drift detection for model health monitoring
 - **Production Ready**: Containerized API service with input validation and feature alignment
 
 ## 🏗️ Architecture
@@ -43,6 +44,10 @@ mlops-churn-prediction/
 │   ├── app.py                  # FastAPI application
 │   ├── predictor.py            # Model prediction logic
 │   └── schemas.py              # Pydantic request/response models
+├── monitoring/
+│   ├── logger.py               # Prediction logging utility
+│   ├── drift.py                # Data drift detection
+│   └── run_drift_check.py      # Drift detection script
 ├── models/                     # Trained models and feature names
 │   ├── model.joblib
 │   └── feature_names.joblib    # Saved feature column names
@@ -257,6 +262,7 @@ mlflow ui
 The serving layer (`serving/app.py`) provides:
 - Health check endpoint: `GET /health`
 - Prediction endpoint: `POST /predict`
+- **Automatic prediction logging** - All predictions are logged for monitoring
 
 ### Request Schema
 
@@ -301,6 +307,97 @@ curl -X POST "http://localhost:8000/predict" \
     "internetservice": "Fiber optic"
   }'
 ```
+
+**Note:** All predictions are automatically logged to `monitoring/predictions.log` for monitoring and drift detection.
+
+## 📊 Production Monitoring
+
+### Prediction Logging
+
+Every prediction request is automatically logged with:
+- **Timestamp**: UTC timestamp of the prediction
+- **Input**: Complete input feature set
+- **Prediction**: Churn probability output
+
+Logs are stored in `monitoring/predictions.log` as JSON lines format:
+```json
+{"timestamp": "2026-01-15T11:37:51.050418", "input": {...}, "prediction": 0.313}
+```
+
+### Data Drift Detection
+
+**What is Data Drift?**
+
+Data drift occurs when the distribution of incoming production data differs from the training data distribution. This can cause model performance degradation.
+
+**Example:**
+- Training data: Average tenure = 24 months
+- Production data: Average tenure = 4 months
+- **Result:** Model reliability drops
+
+**Drift Detection Implementation**
+
+The monitoring system uses **Kolmogorov-Smirnov (KS) test** to detect drift in numeric features:
+
+1. **Compare Distributions**: Compares training data vs production data for each numeric feature
+2. **Statistical Test**: Uses KS-2samp test to measure distribution differences
+3. **Drift Signal**: Flags drift when p-value < threshold (default: 0.05)
+
+**Run Drift Detection:**
+
+```bash
+# Make some predictions first (to generate logs)
+curl -X POST "http://localhost:8000/predict" -H "Content-Type: application/json" -d '{...}'
+
+# Run drift check
+python -m monitoring.run_drift_check
+```
+
+**Output Example:**
+```
+DRIFT REPORT
+tenure {'p_value': 0.023, 'drift_detected': True}
+monthlycharges {'p_value': 0.156, 'drift_detected': False}
+totalcharges {'p_value': 0.089, 'drift_detected': False}
+```
+
+**Drift Detection Components:**
+
+- `monitoring/logger.py` - Logs predictions with timestamp and full context
+- `monitoring/drift.py` - Implements KS test for numeric feature drift detection
+- `monitoring/run_drift_check.py` - Script to compare training vs production data
+
+**Key Features:**
+- ✅ Automatic type conversion (handles string/float mismatches)
+- ✅ Handles missing values gracefully
+- ✅ Configurable p-value threshold
+- ✅ Per-feature drift reporting
+
+### Monitoring Architecture
+
+```
+FastAPI
+ ├── Predict endpoint
+ ├── Log inputs + outputs → monitoring/predictions.log
+ └── Drift checker (scheduled/manual)
+     ├── Reads training data (data/processed/train.csv)
+     ├── Reads production logs (monitoring/predictions.log)
+     └── Compares distributions → Drift report
+```
+
+### Retraining Signals
+
+In production, retrain when:
+- ✅ **Drift detected** - Data distribution has shifted
+- ✅ **Prediction confidence shifts** - Model uncertainty increases
+- ✅ **Performance drops** - When delayed labels arrive (future enhancement)
+
+### Future Enhancements
+
+- **Performance Monitoring**: Track prediction vs actual when labels arrive
+- **Automated Alerts**: Set up alerts when drift is detected
+- **Scheduled Checks**: Run drift detection on a schedule (cron, Airflow, etc.)
+- **Categorical Drift**: Extend drift detection to categorical features
 
 ## 🐳 Docker Deployment
 
@@ -438,7 +535,9 @@ python -m training.train training/config.yaml
 3. **Feature Engineering** → Shared pipeline
 4. **Training** → MLflow tracks everything
 5. **Serving** → Same feature pipeline ensures consistency
-6. **Deployment** → Dockerized for portability
+6. **Monitoring** → Log predictions and detect drift
+7. **Deployment** → Dockerized for portability
+8. **Retraining** → Triggered by drift or performance signals
 
 ## 🛠️ Development
 
@@ -450,6 +549,14 @@ python -m training.train training/config.yaml
 
 # API health check
 curl http://localhost:8000/health
+
+# Test prediction (generates logs)
+curl -X POST "http://localhost:8000/predict" \
+  -H "Content-Type: application/json" \
+  -d '{"tenure": 12, "monthlycharges": 70.5, "totalcharges": 845.0, "contract": "Month-to-month", "paymentmethod": "Electronic check", "internetservice": "Fiber optic"}'
+
+# Run drift detection
+python -m monitoring.run_drift_check
 ```
 
 ### Project Dependencies
@@ -458,6 +565,7 @@ See `requirements.txt` for full list:
 - `numpy` - Numerical computing
 - `pandas` - Data manipulation
 - `scikit-learn` - Machine learning
+- `scipy` - Statistical tests (for drift detection)
 - `pyyaml` - Configuration parsing
 - `joblib` - Model serialization
 - `mlflow` - Experiment tracking

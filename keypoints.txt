@@ -1,0 +1,332 @@
+#### Key points to mention
+
+Git → versions code
+DVC → versions data
+MLflow → versions experiments & models
+
+(“DVC cache stores content-addressed data blobs, indexed by hash”)
+now dvc is responsible for data versioning (only and only remember this) , the actual data is stored in dvc 
+local cache in case that local cache is deleted, so eventhough you have pushed the .csv.dvc file to the github then the data is lost 
+because the .csv.dvc is a pointer to the hashed the dvc data file that is there in the cache, so pushing the .csv.dvc file is a must 
+to reproduce the same result and for training but for actual data versioning and control you will need to configure a remote 
+for the dvc just like we set remote for a local git repo , the dvc remote is usually configured to storage structures like s3, blob storage etc. 
+
+so when you clone the git repo then you get the .dvc folder which is essentially the metadata not the local cache if you will see inside the .dvc folder
+there is a gitignore file that removes cache and if you will compare the file stored in cache and the csv file will have the same size. 
+
+git pull (gets everything needed to run the code )
+dvc pull ( if remote is set) gets the actual csv file needed for reproducing the same result. 
+
+
+
+
+the ci pipeline right now will give FileNotFoundError: data/processed/train.csv error because the data is not beig fetched at the time of CI
+it can be made with Gdrive , s3 etc so in the pipeline step it will replaced by 
+
+- name: Pull data with DVC
+  env:
+    AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+    AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+  run: |
+    dvc pull
+
+### Commit 1 
+Initial reproducible training pipeline
+
+A real Git repo
+A non-notebook ML training pipeline
+Config-driven training
+Reproducible runs
+Industry-grade structure
+
+### Commit 2
+“We use MLflow to track experiments, log metrics, and manage model versions.
+Each training run logs config parameters and registers a model for promotion.”
+
+
+### Commit 3
+LEVEL 2.5 — DATA VERSIONING WITH DVC
+🎯 What this level gives you
+After this step, you can say (confidently):
+“Every model in MLflow can be reproduced with the exact same dataset.”
+
+Initialize DVC in the repo
+
+dvc init
+
+You’ll see:
+.dvc/
+.dvcignore
+
+📌 DVC does NOT replace Git — it works with Git.
+
+### Commit 4
+
+❌ Do NOT version raw data
+✅ Version processed training data
+Why?
+Raw data is often huge
+Processed data is what training actually uses
+
+Track processed data with DVC
+
+dvc add data/processed/train.csv
+
+This creates:
+
+data/processed/train.csv.dvc
+
+The actual CSV is now ignored by Git, tracked by DVC.
+
+git add data/processed/train.csv.dvc .gitignore
+git commit -m "Version processed training data with DVC"
+
+
+### commit 5
+
+STEP 8 — Re-run training (with DVC data)
+python training/train.py training/config.yaml
+
+
+Your experiment now implicitly depends on:
+Git commit
+DVC data hash
+MLflow run
+
+
+STEP 9 — (VERY IMPORTANT) Reproducibility test
+
+Simulate reality:
+rm data/processed/train.csv
+
+Restore data:
+dvc checkout
+
+“We version processed training datasets using DVC.
+Each dataset version is tied to a Git commit and used by MLflow runs, allowing full reproducibility and rollback.”
+
+git add training/config.yaml data/process_data.py requirements.txt
+git commit -m "Add DVC-based data versioning and preprocessing pipeline"
+
+
+
+### commit 6
+🎯 What this level guarantees
+
+After this step, you can confidently say:
+“The exact same feature logic is used in training and inference, preventing training–serving skew.”
+
+✔ Features explicitly defined
+✔ No hidden columns
+✔ One source of truth
+✔ Git-versioned
+✔ Reusable everywhere
+
+This is feature store thinking, minus infra complexity.
+
+
+### commit 7
+aim : “I’ve deployed an ML model as a production API with feature consistency.”
+✔ Feature consistency
+✔ Input validation
+✔ Model lifecycle awareness
+✔ Deployment readiness
+
+
+### commit 8 
+Dockerfile that builds your ML API
+Container that runs uvicorn serving your model
+Environment isolation
+Industry-grade portability
+
+We use Python slim to reduce image size
+Working directory is /app (convention)
+Exposes port 8000
+Model + feature pipeline already in repo, copied in
+
+docker build -t mlops-churn-api -f infra/docker/Dockerfile .  (from repo root) (build the image)
+
+docker run -p 8000:8000 mlops-churn-api  (starting the container)
+
+Now you can say:
+
+“I’ve containerized the FastAPI service with the trained ML model and feature pipeline.
+This ensures reproducibility, portability, and readiness for CI/CD or Kubernetes.”
+✔ Dockerized ML API
+✔ Feature pipeline preserved
+✔ Reproducible environment
+✔ Ready for CI/CD + Kubernetes
+
+
+###commit 9
+CI/CD (GITHUB ACTIONS)
+After this, every push will automatically:
+
+✅ Set up Python
+✅ Install dependencies
+✅ Run training sanity check
+✅ Build Docker image
+✅ Fail fast if something breaks
+
+Git Push
+   ↓
+GitHub Actions
+   ↓
+Tests / Training Check
+   ↓
+Docker Build
+
+
+
+
+###steps to setup gdrive support 
+
+🔧 STEP 1 — Install Google Drive support
+
+Locally (inside your venv):
+
+pip install "dvc[gdrive]"
+
+
+Verify:
+
+dvc remote list
+
+🔧 STEP 2 — Create a Google Service Account
+
+Go to Google Cloud Console
+
+Create a new project
+
+Enable Google Drive API
+
+Create a Service Account
+
+Create a JSON key
+
+Download the .json file
+
+Example name: gdrive-sa.json
+
+⚠️ DO NOT COMMIT THIS FILE
+
+🔧 STEP 3 — Create a folder in Google Drive
+
+Create a folder in Google Drive
+
+Example: mlops-dvc-data
+
+Right-click → Share
+
+Share with:
+
+<service-account-email>@<project>.iam.gserviceaccount.com
+
+
+Give Editor access
+
+📌 This is critical.
+
+🔧 STEP 4 — Configure DVC remote
+
+From repo root:
+
+dvc remote add -d gdrive gdrive://<FOLDER_ID>
+
+
+📌 Folder ID is the string in the Drive URL:
+
+https://drive.google.com/drive/folders/<FOLDER_ID>
+
+🔧 STEP 5 — Attach credentials
+dvc remote modify gdrive gdrive_use_service_account true
+dvc remote modify gdrive gdrive_service_account_json_file_path gdrive-sa.json
+
+
+Check:
+
+dvc remote list
+
+
+You should see:
+
+gdrive  gdrive://xxxxxxxx
+
+🔧 STEP 6 — Push data to Google Drive
+dvc push
+
+
+You’ll see files appear inside your Drive folder.
+
+📌 These are content-addressed blobs, not readable CSVs.
+
+🔧 STEP 7 — Secure the credentials
+
+Add to .gitignore:
+
+gdrive-sa.json
+
+
+Commit DVC config:
+
+git add .dvc/config
+git commit -m "Configure DVC remote with Google Drive"
+
+
+
+
+
+###new commit 
+implementing:
+
+Prediction logging
+Data drift detection
+Simple performance monitoring
+Clear retraining signal
+
+Inputs → Drift
+Predictions → Distribution shift
+Delayed labels → Performance (later)
+
+Architecture
+FastAPI
+ ├── Predict
+ ├── Log inputs + outputs
+ ├── Store logs (CSV / DB)
+ └── Drift checker (scheduled)
+
+What is drift?
+
+When incoming data distribution ≠ training data distribution
+
+Example:
+
+Training tenure avg = 24 months
+Production tenure avg = 4 months
+Model reliability drops.
+
+STEP 7 — Simulate drift detection
+
+Make a few /predict calls
+
+Run:
+python monitoring/run_drift_check.py
+
+PART 4 — Performance Monitoring (Delayed Labels)
+Reality:
+
+Labels arrive days/weeks later
+
+Stored separately
+
+Concept:
+prediction vs actual → metrics
+
+
+In production, retrain when:
+
+Drift detected ✅
+
+Prediction confidence shifts
+
+Performance drops (when labels arrive)

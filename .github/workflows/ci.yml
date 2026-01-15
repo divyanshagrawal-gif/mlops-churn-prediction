@@ -26,7 +26,7 @@ jobs:
 
       - name: Run training sanity check
         run: |
-          python training.train training/config.yaml
+          python training/train.py training/config.yaml
 
       - name: Build Docker image
         run: |

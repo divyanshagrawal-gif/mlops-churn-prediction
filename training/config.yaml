@@ -1,0 +1,12 @@
+data:
+  input_path: data/raw/churn.csv
+  target: Churn
+
+model:
+  type: logistic_regression
+  params:
+    max_iter: 500
+
+training:
+  test_size: 0.2
+  random_state: 42
